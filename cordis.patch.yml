@@ -1,0 +1,11 @@
+# dsh-reactor bundle patch
+# This file is referenced by package.json's "dsh.bundle.patch" field.
+# It inserts the plugin into the composed Cordis tree when the bundle is installed.
+
+- insert:
+    - id: dsh-reactor
+      name: 'dsh-reactor'
+      config:
+        allowShell: true
+        maxConcurrentActions: 3
+        defaultIntervalMs: 60000
