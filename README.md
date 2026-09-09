@@ -185,6 +185,25 @@ Agent 通过以下工具管理规则（用户无需手动操作，自然语言�
 
 ---
 
+## 可视化挂件（v0.3）
+
+除了对话管理，dsh-reactor 还提供一个**常驻在 DSH Web 右下角的小挂件**，把规则设定、监控结果、触发历史全部可视化：
+
+- **卡通形象悬浮气泡**：默认是一只浅蓝小反应堆机器人，可拖拽吸附到四边/四角，大小 0.6–2.5x 缩放，支持自定义形象图片（点击形象或通过挂件设置修改）
+- **触发即提醒**：规则触发、动作失败、重试耗尽时弹出 toast 气泡 + 未读角标，点击可放大成完整管理面板
+- **管理面板**：
+  - 总览：规则数、总触发次数、动作成败、最后触发时间、最近事件流
+  - 规则列表：启停开关、删除、点击进入详情
+  - 新建规则：可视化表单（含 **GitHub Release 监控**等快捷预设——监控仓库新版本发布 → 自动拉取代码运行）
+  - 规则详情：每次触发的执行历史、每动作成功/失败、重试次数、attemptLog、Agent 会话 Token 消耗、失败报错与分析
+- **数据通道**：挂件通过内置 REST API（`/reactor/api/*`）读写规则与状态，与对话工具完全同源
+
+挂件默认开启（`uiEnabled: true`）；如不需要，在 `cordis.patch.yml` 中配置 `uiEnabled: false` 即可。
+
+> 依赖 `dsh.client` 客户端通道（自动随插件安装加载），仅 `web` profile 生效。
+
+---
+
 ## 静态配置（可选）
 
 除了通过 Agent 对话动态创建规则，也可以在 profile 的 `cordis.patch.yml` 中预定义静态规则：
@@ -234,6 +253,8 @@ Agent 通过以下工具管理规则（用户无需手动操作，自然语言�
 | `agentWorkspaceDir` | string | `$DSH_HOME/reactor/workspaces` | agent-talk 会话的工作区根目录（v0.2） |
 | `agentPreset` | string | `standard` | 创建会话使用的 Agent 预设（v0.2） |
 | `permissionPreset` | string | `workspace-write` | 创建会话使用的权限预设（v0.2） |
+| `apiPath` | string | `/reactor/api` | 挂件 REST API 前缀路径（v0.3） |
+| `uiEnabled` | boolean | `true` | 是否启用 Web 挂件（v0.3；仅 web profile 生效） |
 
 ---
 
@@ -296,6 +317,7 @@ curl -X POST http://127.0.0.1:3080/reactor/webhook \
 | 持久化 | 部分支持 | 规则 + 历史双落盘（v0.2） |
 | 外部推送 | 不支持 | webhook 接收端点（v0.2） |
 | 可审计性 | 运行日志 | 每次触发、每个动作、会话结果全记录（v0.2） |
+| 可视化管理 | 部分插件有面板 | 常驻挂件：气泡提醒 + 规则/历史/Token/失败分析可视化（v0.3） |
 
 ---
 
