@@ -5,8 +5,12 @@ import type {
   ReactorRule,
   ReactorConfig,
   EventSource,
+  Action,
+  ActionAttempt,
   TriggerRecord,
   ActionRunRecord,
+  ReactorEvent,
+  ReactorStats,
 } from './types.js'
 import { evaluateAll } from './conditions.js'
 import { runShellAction } from './actions/shell.js'
@@ -21,12 +25,6 @@ import { RuleStore, HistoryStore } from './store.js'
  *   addRule → startSource (polling timer / webhook registration) → collectPayload → evaluate → executeActions
  *   removeRule → stopSource → persist
  *   dispose → persist + stop all sources + flush history
- *
- * v0.2.0 upgrades:
- *   - P0-1 rules persist to disk (survive restart)
- *   - P0-2 agent-talk creates a real isolated Agent Session
- *   - P1-1 every trigger is recorded to history
- *   - P1-2 webhook event source (push) added alongside polling sources
  */
 export class ReactorEngine {
   private rules = new Map<string, ReactorRule>()
@@ -38,6 +36,9 @@ export class ReactorEngine {
   private ruleStore: RuleStore
   private historyStore: HistoryStore
   private closed = false
+  // v0.3: widget event stream (bounded ring buffer, monotonic seq).
+  private eventSeq = 0
+  private events: ReactorEvent[] = []
 
   constructor(ctx: Context, config: ReactorConfig) {
     this.ctx = ctx
@@ -46,7 +47,59 @@ export class ReactorEngine {
     this.historyStore = new HistoryStore(config.historyPath, config.maxHistoryEntries ?? 500)
   }
 
-  // ─── Persistence (P0-1) ─────────────────────────────────────
+  // ─── Widget Event Stream (v0.3) ────────────────────────────────────────────
+
+  /** Append an event and return its sequence number. */
+  private emitEvent(
+    type: ReactorEvent['type'],
+    data: { ruleId: string; ruleName?: string; matched?: boolean; error?: string; triggerCount?: number; detail?: Record<string, unknown> },
+  ): number {
+    const ev: ReactorEvent = {
+      seq: ++this.eventSeq,
+      type,
+      at: Date.now(),
+      ...data,
+    }
+    this.events.push(ev)
+    if (this.events.length > 200) this.events.splice(0, this.events.length - 200)
+    return ev.seq
+  }
+
+  /** Events after the given sequence (for incremental widget polling). */
+  listEvents(since = 0): ReactorEvent[] {
+    return this.events.filter((e) => e.seq > since)
+  }
+
+  /** Current event stream head sequence. */
+  getEventSeq(): number {
+    return this.eventSeq
+  }
+
+  // ─── Aggregated Stats (v0.3) ───────────────────────────────────────────────
+
+  getStats(): ReactorStats {
+    const rules = [...this.rules.values()]
+    const history = this.historyStore.list()
+    const triggered = history.filter((h) => h.matched)
+    let totalActions = 0
+    let failedActions = 0
+    let lastTriggerAt: number | undefined
+    for (const rec of triggered) {
+      if (lastTriggerAt === undefined || rec.at > lastTriggerAt) lastTriggerAt = rec.at
+      totalActions += rec.actions?.length ?? 0
+      failedActions += rec.actions?.filter((a) => !a.ok).length ?? 0
+    }
+    return {
+      totalRules: rules.length,
+      enabledRules: rules.filter((r) => r.enabled).length,
+      totalTriggers: triggered.length,
+      totalActions,
+      failedActions,
+      lastTriggerAt,
+    }
+  }
+
+  // ─── Persistence (P0-1) ────────────────────────────────────────────────────
 
   /** Load persisted rules and (re)start their sources. */
   async loadPersisted(): Promise<number> {
@@ -70,7 +123,7 @@ export class ReactorEngine {
     }
   }
 
-  // ─── Rule Management ────────────────────────────────────────
+  // ─── Rule Management ───────────────────────────────────────────────────────
 
   addRule(rule: ReactorRule): void {
     this.rules.set(rule.id, rule)
@@ -78,6 +131,7 @@ export class ReactorEngine {
       this.startSource(rule)
     }
     this.ctx.logger.info(`[reactor] rule added: ${rule.name} (${rule.id})`)
+    this.emitEvent('rule-added', { ruleId: rule.id, ruleName: rule.name })
     void this.persist()
   }
 
@@ -88,6 +142,32 @@ export class ReactorEngine {
     this.rules.delete(id)
     this.prevPayloads.delete(id)
     this.ctx.logger.info(`[reactor] rule removed: ${id}`)
+    this.emitEvent('rule-removed', { ruleId: id, ruleName: rule.name })
+    void this.persist()
+    return true
+  }
+
+  /**
+   * Update a rule in place (enable/disable or edit definition).
+   * The event source is restarted so interval/path changes take effect.
+   * (v0.3)
+   */
+  updateRule(id: string, patch: Partial<ReactorRule>): boolean {
+    const existing = this.rules.get(id)
+    if (!existing) return false
+    this.stopSource(id)
+    const next: ReactorRule = {
+      ...existing,
+      ...patch,
+      // never overwrite runtime state from the caller
+      lastTriggered: existing.lastTriggered,
+      lastPayload: existing.lastPayload,
+      triggerCount: existing.triggerCount,
+    }
+    this.rules.set(id, next)
+    if (next.enabled) this.startSource(next)
+    this.ctx.logger.info(`[reactor] rule updated: ${next.name} (${id})`)
+    this.emitEvent('rule-updated', { ruleId: id, ruleName: next.name })
     void this.persist()
     return true
   }
@@ -100,13 +180,13 @@ export class ReactorEngine {
     return this.rules.get(id)
   }
 
-  // ─── History (P1-1) ─────────────────────────────────────────
+  // ─── History (P1-1) ────────────────────────────────────────────────────────
 
   listHistory(ruleId?: string): TriggerRecord[] {
     return ruleId ? this.historyStore.listForRule(ruleId) : this.historyStore.list()
   }
 
-  // ─── Webhook Event Source (P1-2) ────────────────────────────
+  // ─── Webhook Event Source (P1-2) ───────────────────────────────────────────
 
   /**
    * Deliver an externally pushed payload (from the webhook ingress).
@@ -167,7 +247,7 @@ export class ReactorEngine {
     return { matched, actionsRun }
   }
 
-  // ─── Event Source Lifecycle ─────────────────────────────────
+  // ─── Event Source Lifecycle ────────────────────────────────────────────────
 
   private startSource(rule: ReactorRule): void {
     const { source } = rule
@@ -186,6 +266,11 @@ export class ReactorEngine {
         this.ctx.logger.warn(
           `[reactor] rule "${rule.name}" (${rule.id}) source error: ${err}`,
         )
+        this.emitEvent('rule-error', {
+          ruleId: rule.id,
+          ruleName: rule.name,
+          error: err instanceof Error ? err.message : String(err),
+        })
       }
     }
 
@@ -238,7 +323,7 @@ export class ReactorEngine {
     }
   }
 
-  // ─── Evaluation & Action Execution ──────────────────────────
+  // ─── Evaluation & Action Execution ─────────────────────────────────────────
 
   private async evaluate(rule: ReactorRule, payload: unknown): Promise<void> {
     const prev = this.prevPayloads.get(rule.id)
@@ -279,6 +364,12 @@ export class ReactorEngine {
     this.ctx.logger.info(
       `[reactor] rule "${rule.name}" triggered (count=${rule.triggerCount})`,
     )
+    this.emitEvent('rule-triggered', {
+      ruleId: rule.id,
+      ruleName: rule.name,
+      matched: true,
+      triggerCount: rule.triggerCount,
+    })
 
     const run = await this.executeActions(rule, payload)
     this.record(rule, true, run.actions, run.sessionResult)
@@ -300,63 +391,95 @@ export class ReactorEngine {
       return { actions: records }
     }
 
+    const maxRetries = this.config.maxRetries ?? 3
+    const baseDelay = this.config.retryDelayMs ?? 1000
+
     for (const action of rule.actions) {
       this.runningActions++
       const started = Date.now()
+      const attemptLog: ActionAttempt[] = []
       try {
-        switch (action.kind) {
-          case 'shell':
-            if (this.config.allowShell !== false) {
-              await runShellAction(action, payload)
-              records.push({ kind: action.kind, target: action.target, ok: true, ms: Date.now() - started })
-            } else {
-              records.push({
-                kind: action.kind, target: action.target, ok: false,
-                error: 'shell action blocked by config (allowShell=false)',
-                ms: Date.now() - started,
-              })
-            }
-            break
-          case 'webhook':
-            await runWebhookAction(action, payload)
-            records.push({ kind: action.kind, target: action.target, ok: true, ms: Date.now() - started })
-            break
-          case 'agent-talk':
-            // P0-2: real isolated session when allowed & services present;
-            // otherwise falls back to event broadcast.
-            if (this.config.allowAgentSession !== false) {
-              const result = await runAgentTalkAction(this.ctx, action, payload, {
-                workspaceDir: this.config.agentWorkspaceDir,
-                agentPreset: this.config.agentPreset,
-                permissionPreset: this.config.permissionPreset,
-                ruleName: rule.name,
-                ruleId: rule.id,
-              })
-              records.push({
-                kind: action.kind, target: action.target, ok: result.ok,
-                error: result.error, ms: result.ms,
-              })
-              sessionResult = result
-            } else {
-              await runAgentTalkAction(this.ctx, action, payload, { enableSession: false })
-              records.push({ kind: action.kind, target: action.target, ok: true, ms: Date.now() - started })
-            }
-            break
+        // v0.3: retry with exponential backoff until success or maxRetries exhausted.
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          const once = await this.runActionOnce(rule, action, payload)
+          attemptLog.push({ at: attempt, ...once })
+          if (once.ok) break
+          if (attempt < maxRetries) {
+            const delay = baseDelay * 2 ** attempt
+            await new Promise((resolve) => setTimeout(resolve, delay))
+          }
         }
-      } catch (err) {
-        records.push({
-          kind: action.kind, target: action.target, ok: false,
-          error: err instanceof Error ? err.message : String(err),
+        const last = attemptLog[attemptLog.length - 1]
+        const record: ActionRunRecord = {
+          kind: action.kind,
+          target: action.target,
+          ok: last.ok,
+          error: last.error,
           ms: Date.now() - started,
-        })
-        this.ctx.logger.warn(
-          `[reactor] rule "${rule.name}" action ${action.kind} failed: ${err}`,
-        )
+          attempts: attemptLog.length,
+          ...(attemptLog.length > 1 || !last.ok ? { attemptLog } : {}),
+        }
+        records.push(record)
+        if (!record.ok) {
+          this.emitEvent('action-failed', {
+            ruleId: rule.id,
+            ruleName: rule.name,
+            error: record.error,
+          })
+        }
+        if (action.kind === 'agent-talk' && sessionResult === undefined && last.sessionResult) {
+          sessionResult = last.sessionResult
+        }
       } finally {
         this.runningActions--
       }
     }
     return { actions: records, sessionResult }
+  }
+
+  /** Run one action once. Returns ok/error/duration (+ agent session result). */
+  private async runActionOnce(
+    rule: ReactorRule,
+    action: Action,
+    payload: unknown,
+  ): Promise<{ ok: boolean; error?: string; ms: number; sessionResult?: TriggerRecord['sessionResult'] }> {
+    const started = Date.now()
+    try {
+      switch (action.kind) {
+        case 'shell':
+          if (this.config.allowShell !== false) {
+            await runShellAction(action, payload)
+          } else {
+            return { ok: false, error: 'shell action blocked by config (allowShell=false)', ms: Date.now() - started }
+          }
+          break
+        case 'webhook':
+          await runWebhookAction(action, payload)
+          break
+        case 'agent-talk':
+          // P0-2: real isolated session when allowed & services present;
+          // otherwise falls back to event broadcast.
+          if (this.config.allowAgentSession !== false) {
+            const result = await runAgentTalkAction(this.ctx, action, payload, {
+              workspaceDir: this.config.agentWorkspaceDir,
+              agentPreset: this.config.agentPreset,
+              permissionPreset: this.config.permissionPreset,
+              ruleName: rule.name,
+              ruleId: rule.id,
+            })
+            return { ok: result.ok, error: result.error, ms: result.ms, sessionResult: result }
+          }
+          await runAgentTalkAction(this.ctx, action, payload, { enableSession: false })
+          break
+      }
+      return { ok: true, ms: Date.now() - started }
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        ms: Date.now() - started,
+      }
+    }
   }
 
   /** Append one trigger to the history store. */
@@ -377,7 +500,7 @@ export class ReactorEngine {
     })
   }
 
-  // ─── Disposal ───────────────────────────────────────────────
+  // ─── Disposal ──────────────────────────────────────────────────────────────
 
   /** Stop all timers, clear rules, flush pending writes. Called on unload. */
   async dispose(): Promise<void> {
@@ -395,6 +518,7 @@ export class ReactorEngine {
     }
     this.rules.clear()
     this.prevPayloads.clear()
+    this.events = []
     this.ctx.logger.info('[reactor] engine disposed, all rules and timers cleared')
   }
 }

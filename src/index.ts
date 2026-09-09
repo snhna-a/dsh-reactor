@@ -3,6 +3,7 @@ import z from '@deepseek-ai/schemastery'
 import { ReactorEngine } from './engine.js'
 import { registerTools } from './tools.js'
 import { registerWebhookIngress } from './webhook-server.js'
+import { registerApiServer } from './api-server.js'
 import type { ReactorConfig } from './types.js'
 
 /**
@@ -13,11 +14,23 @@ import type { ReactorConfig } from './types.js'
  *   - P0-2 agent-talk creates real isolated Agent Sessions
  *   - P1-1 every trigger is recorded to a bounded history log
  *   - P1-2 webhook ingress endpoint lets external systems push events
+ * v0.3.0:
+ *   - floating widget UI with rule management + notifications
+ *   - REST API (same-origin loopback) backing the widget
+ *   - action retry with exponential backoff (maxRetries / retryDelayMs)
+ *   - incremental event stream for widget bubble notifications
+ *   - aggregated stats endpoint
  */
 
 export const name = 'dsh-reactor'
 
-export const inject = ['tools']
+/**
+ * Hard dependencies. `tools` gives the model-visible tool registry; `webServer`
+ * gives the HTTP carrier for the webhook ingress and the widget REST API.
+ * Declaring webServer here (like dsh-cron-panel does) is required: cordis
+ * hides undeclared services from a plugin's ctx.get().
+ */
+export const inject = ['tools', 'webServer']
 
 export const Config = z.object({
   allowShell: z.boolean().default(true),
@@ -33,6 +46,10 @@ export const Config = z.object({
   agentWorkspaceDir: z.string(),
   agentPreset: z.string().default('standard'),
   permissionPreset: z.string().default('workspace-write'),
+  maxRetries: z.number().default(3),
+  retryDelayMs: z.number().default(1000),
+  apiPath: z.string().default('/reactor/api'),
+  uiEnabled: z.boolean().default(true),
 })
 
 export function apply(ctx: Context, config: ReactorConfig): void {
@@ -70,6 +87,15 @@ export function apply(ctx: Context, config: ReactorConfig): void {
     },
   )
   if (ingress) disposers.push(ingress)
+
+  // v0.3: widget REST API — same-origin loopback routes the browser polls.
+  if (config.uiEnabled !== false) {
+    const api = registerApiServer(ctx, engine, {
+      path: config.apiPath ?? '/reactor/api',
+      token: config.webhookToken,
+    })
+    if (api) disposers.push(api)
+  }
 
   // Reversible cleanup: when the plugin unloads (HMR / profile switch / shutdown),
   // stop all polling timers, clear rules, flush history, remove the webhook route.
