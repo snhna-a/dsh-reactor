@@ -187,8 +187,9 @@ export const inject = ['tools']   // 必需服务：工具注册表（webServer 
 pnpm install                 # 安装依赖（需官方 registry）
 pnpm typecheck               # 类型检查
 pnpm build                   # 构建到 lib/
-node test/smoke.mjs          # 核心引擎冒烟测试（33 项断言）
+node test/smoke.mjs          # 核心引擎冒烟测试（37 项断言）
 node test/boot-check.mjs     # 真实 Cordis 启动验证（无/有 webServer 两场景）
+node examples/github-release-watcher.mjs   # 端到端演示（真实请求 GitHub）
 ```
 
 ### 4.3 依赖声明（package.json）
@@ -252,6 +253,7 @@ dsh plugin --profile web add .
 | jsonPath | 嵌套取值 / 数组索引 / 缺失路径 |
 | 条件评估 | 10 种操作符正反例 |
 | AND/OR | 组合逻辑 |
+| 插值（v0.2） | {{field}} / {{payload.field}} / 嵌套 / 缺失 |
 | 引擎生命周期 | addRule / getRule / removeRule / dispose |
 | 错误隔离 | 动作失败不崩溃 |
 | 持久化（v0.2） | 规则重启恢复 / 运行时状态剥离 / 历史跨重启 |
@@ -382,13 +384,14 @@ npm publish --access public
 | `src/agent-session.ts` | 新增：真实 Agent 会话执行 |
 | `src/webhook-server.ts` | 新增：HTTP 接收端点；`ctx.get('webServer')` 可选注入读取 |
 | `src/types.ts` | 扩展：EventSourceKind + webhook；新增 TriggerRecord / ActionRunRecord / SessionRunResult / PersistedState / PersistedRule；Config 新增 9 项 |
-| `src/engine.ts` | 接入持久化、历史、webhook 分派、真实会话；closed 标志防 dispose 后空转；dispose 顺序修正 |
-| `src/actions/agent-talk.ts` | 改造：真实会话优先，事件广播降级 |
+| `src/engine.ts` | 接入持久化、历史、webhook 分派、真实会话；closed 标志防 dispose 后空转；dispose 顺序修正；testRule 更新 prevPayloads（changed 状态感知在测试路径一致） |
+| `src/actions/shell.ts` | 改造：真实会话优先，事件广播降级；插值兼容 {{payload.field}} / {{field}} |
 | `src/tools.ts` | reactor_define 支持 webhook；新增 reactor_history |
 | `src/index.ts` | 加载持久化、注册 webhook 入口、新 Config 项 |
-| `test/smoke.mjs` | 新增 persistence / webhook 两组测试（33 项全过） |
+| `test/smoke.mjs` | 新增 persistence / webhook / interpolate 测试（37 项全过） |
 | `test/boot-check.mjs` | 新增：真实 Cordis 启动验证（无/有 webServer 两场景） |
-| `README.md` | 新功能文档化 |
+| `examples/github-release-watcher.mjs` | 新增：真实 GitHub Release 监控端到端演示（含 API 限流/断连降级） |
+| `README.md` | 新功能文档化 + 真实效果演示 + GitHub 监控示例 + 兼容性声明 |
 | `package.json` | 版本 0.2.0 |
 
 ### 8.7 二期验证记录
@@ -396,11 +399,14 @@ npm publish --access public
 | 验证项 | 结果 |
 |--------|------|
 | `tsc` 类型检查（cordis 4.0.2 / dsh-tools 0.1.2-rc.1 / schemastery 3.18.2） | ✅ 0 错误 |
-| 冒烟测试（33 项：jsonPath/条件/AND-OR/引擎生命周期/持久化/历史/webhook 分派） | ✅ 33/33 通过 |
+| 冒烟测试（37 项：jsonPath/条件/AND-OR/插值/引擎生命周期/持久化/历史/webhook 分派） | ✅ 37/37 通过 |
 | Windows rename 并发竞态 | ✅ 串行写队列修复 |
 | dispose 持久化顺序 | ✅ 先存后清 |
 | 真实 Cordis 启动验证（`test/boot-check.mjs`：无 webServer / 有 webServer 两场景） | ✅ 2/2 通过 |
 | webServer 可选注入修复 | ✅ `ctx.get('webServer')` 替代直接属性访问，消除 `cannot get property "webServer" without inject` 启动崩溃 |
+| testRule 状态感知修复 | ✅ `testRule` 更新 prevPayloads，`changed` 条件在测试路径与轮询路径行为一致 |
+| 模板插值兼容修复 | ✅ `{{payload.field}}` 与 `{{field}}` 等价（剥离 `payload.` 前缀），与文档写法一致 |
+| 真实端到端演示（`examples/github-release-watcher.mjs`，真实请求 GitHub） | ✅ 基线触发 → 同版本不触发 → 新版本再触发；API 限流/SSL 失败自动降级 HTML 端点 |
 
 ### 8.8 二期遗留与后续建议
 
