@@ -1,10 +1,31 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { ReactorEngine } from './engine.js'
 import { registerTools } from './tools.js'
 import { registerWebhookIngress } from './webhook-server.js'
 import { registerApiServer } from './api-server.js'
 import type { ReactorConfig } from './types.js'
+
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const MASCOT_CANDIDATES = [
+  path.join(PACKAGE_ROOT, 'docs', 'assets', 'reactor-mascot.png'),
+  path.join(PACKAGE_ROOT, 'assets', 'reactor-mascot.png'),
+]
+
+function loadMascot(): Buffer | null {
+  for (const p of MASCOT_CANDIDATES) {
+    try {
+      const bytes = fs.readFileSync(p)
+      if (bytes && bytes.length > 0) return bytes
+    } catch {
+      /* try next candidate */
+    }
+  }
+  return null
+}
 
 /**
  * dsh-reactor — Event-Condition-Action rule engine for DeepSeek Harness.
@@ -15,11 +36,14 @@ import type { ReactorConfig } from './types.js'
  *   - P1-1 every trigger is recorded to a bounded history log
  *   - P1-2 webhook ingress endpoint lets external systems push events
  * v0.3.0:
- *   - floating widget UI with rule management + notifications
+ *   - floating widget UI (shell.overlay) with rule management + notifications
  *   - REST API (same-origin loopback) backing the widget
  *   - action retry with exponential backoff (maxRetries / retryDelayMs)
  *   - incremental event stream for widget bubble notifications
  *   - aggregated stats endpoint
+ * v0.3.1:
+ *   - redesigned widget UI (whale-style: squishy press, SVG bubble, edge snap, mirror flip, hamburger menu, frosted panel)
+ *   - local mascot image served by host plugin (no external CDN dependency)
  */
 
 export const name = 'dsh-reactor'
@@ -95,6 +119,31 @@ export function apply(ctx: Context, config: ReactorConfig): void {
       token: config.webhookToken,
     })
     if (api) disposers.push(api)
+
+    // v0.3.1: serve local mascot image (no external CDN dependency).
+    try {
+      const mascotDisposer = ctx.webServer.register({
+        kind: 'exact',
+        path: '/reactor/mascot.png',
+        handler: (_req, res) => {
+          const bytes = loadMascot()
+          if (!bytes) {
+            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+            res.end('mascot not found')
+            return
+          }
+          res.writeHead(200, {
+            'Content-Type': 'image/png',
+            'Cache-Control': 'public, max-age=86400',
+            'Content-Length': String(bytes.length),
+          })
+          res.end(bytes as unknown as string)
+        },
+      })
+      disposers.push(mascotDisposer)
+    } catch (e) {
+      ctx.logger.warn(`[dsh-reactor] mascot route failed: ${String(e)}`)
+    }
   }
 
   // Reversible cleanup: when the plugin unloads (HMR / profile switch / shutdown),
