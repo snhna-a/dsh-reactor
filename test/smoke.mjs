@@ -4,6 +4,7 @@
  * and engine rule matching directly.
  */
 import { evaluateCondition, evaluateAll, jsonPath } from '../lib/conditions.js'
+import { interpolate } from '../lib/actions/shell.js'
 import { ReactorEngine } from '../lib/engine.js'
 
 // Mock context that satisfies the engine's minimal needs
@@ -55,6 +56,25 @@ assert(
 assert(
   !evaluateCondition({ field: '$.v', op: 'changed' }, { v: 1 }, { v: 1 }),
   'changed rejects same value',
+)
+
+// ─── interpolate (template placeholders) ─────────────────────────
+console.log('\ninterpolate:')
+assert(
+  interpolate('tag is {{tag_name}}', { tag_name: 'v1.0.0' }) === 'tag is v1.0.0',
+  '{{field}} resolves from payload root',
+)
+assert(
+  interpolate('tag is {{payload.tag_name}}', { tag_name: 'v1.0.0' }) === 'tag is v1.0.0',
+  '{{payload.field}} prefix is stripped (docs-compatible)',
+)
+assert(
+  interpolate('{{data.count}}', { data: { count: 3 } }) === '3',
+  'nested path resolves',
+)
+assert(
+  interpolate('x {{missing}} y', {}) === 'x  y',
+  'missing field resolves to empty string',
 )
 
 // ─── evaluateAll (AND/OR) ──────────────────────────────────────
