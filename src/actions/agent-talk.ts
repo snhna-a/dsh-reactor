@@ -3,16 +3,19 @@ import type { Action, SessionRunResult } from '../types.js'
 import { runAgentSession } from '../agent-session.js'
 
 /**
- * Replace {{payload.field}} placeholders in a template string.
+ * Replace {{payload.field}} / {{field}} placeholders in a template string.
  * Local copy to avoid cross-module type resolution issues.
+ * The leading `payload.` prefix is stripped when present.
  */
 function interpolate(template: string, payload: unknown): string {
   return template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, path: string) => {
-    const parts = path.trim().split('.')
+    let p = path.trim()
+    if (p.startsWith('payload.')) p = p.slice('payload.'.length)
+    const parts = p.split('.')
     let cur: unknown = payload
-    for (const p of parts) {
+    for (const part of parts) {
       if (cur == null) return ''
-      cur = (cur as Record<string, unknown>)[p]
+      cur = (cur as Record<string, unknown>)[part]
     }
     return String(cur ?? '')
   })

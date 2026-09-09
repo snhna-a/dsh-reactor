@@ -2,15 +2,19 @@ import { execa } from 'execa'
 import type { Action } from '../types.js'
 
 /**
- * Replace {{payload.field}} placeholders in a template string with values from payload.
+ * Replace {{payload.field}} / {{field}} placeholders in a template string
+ * with values from the event payload. Both spellings are supported:
+ * the leading `payload.` prefix is stripped when present.
  */
 export function interpolate(template: string, payload: unknown): string {
   return template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, path: string) => {
-    const parts = path.trim().split('.')
+    let p = path.trim()
+    if (p.startsWith('payload.')) p = p.slice('payload.'.length)
+    const parts = p.split('.')
     let cur: unknown = payload
-    for (const p of parts) {
+    for (const part of parts) {
       if (cur == null) return ''
-      cur = (cur as Record<string, unknown>)[p]
+      cur = (cur as Record<string, unknown>)[part]
     }
     return String(cur ?? '')
   })

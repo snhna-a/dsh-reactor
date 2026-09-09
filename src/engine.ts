@@ -139,6 +139,9 @@ export class ReactorEngine {
   /**
    * Manually evaluate a rule with a given payload (for testing).
    * Returns whether conditions matched and how many actions ran.
+   *
+   * Mirrors the live poll path: the payload is remembered so the `changed`
+   * operator compares against the previous test payload.
    */
   async testRule(
     id: string,
@@ -152,6 +155,7 @@ export class ReactorEngine {
       payload,
       this.prevPayloads.get(id),
     )
+    this.prevPayloads.set(id, payload)
     let actionsRun = 0
     if (matched) {
       const record = await this.executeActions(rule, payload)
