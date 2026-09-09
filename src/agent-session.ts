@@ -136,11 +136,38 @@ export async function runAgentSession(
       throw error
     }
 
+    // v0.3: best-effort token usage probe. Different harness versions expose
+    // usage on the agent/session object under different shapes; when nothing
+    // is exposed we simply omit the field (the widget shows "unavailable").
+    let tokens: { input?: number; output?: number } | undefined
+    try {
+      const agentObj = handle.agent as unknown as Record<string, unknown>
+      const usageFn = (agentObj.getUsage ?? agentObj.usage) as unknown
+      const usageVal =
+        typeof usageFn === 'function'
+          ? (usageFn as () => unknown).call(agentObj)
+          : usageFn
+      if (usageVal && typeof usageVal === 'object') {
+        const u = usageVal as Record<string, unknown>
+        const input = (u.input ?? u.inputTokens ?? u.promptTokens) as number | undefined
+        const output = (u.output ?? u.outputTokens ?? u.completionTokens) as number | undefined
+        if (input !== undefined || output !== undefined) {
+          tokens = {
+            ...(typeof input === 'number' ? { input } : {}),
+            ...(typeof output === 'number' ? { output } : {}),
+          }
+        }
+      }
+    } catch {
+      // usage probing is best-effort; never fail the run because of it
+    }
+
     return {
       sessionId,
       workspacePath,
       ok: true,
       ms: Date.now() - started,
+      ...(tokens ? { tokens } : {}),
     }
   } catch (error) {
     return {

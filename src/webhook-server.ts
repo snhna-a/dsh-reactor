@@ -29,25 +29,33 @@ export interface WebhookIngressConfig {
 }
 
 /** Minimal shapes of the injected webServer service and HTTP request/response. */
-interface HttpRequest {
+export interface HttpRequest {
   method?: string
+  url?: string
   headers?: Record<string, string | string[] | undefined>
   headersDistinct?: Record<string, string[] | undefined>
   [Symbol.asyncIterator](): AsyncIterator<Buffer | string>
 }
 
-interface HttpResponse {
+export interface HttpResponse {
   writeHead(status: number, headers?: Record<string, string>): void
   end(body?: string): void
   setHeader?(name: string, value: string): void
 }
 
-interface WebServerLike {
+export interface WebServerLike {
   register(route: {
-    kind: 'exact'
+    kind: 'exact' | 'prefix'
     path: string
     handler: (req: HttpRequest, res: HttpResponse) => Promise<void> | void
   }): () => void
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The browser HTTP carrier service (dsh-host-webserver). Injected via `inject: ['webServer']`. */
+    webServer: WebServerLike
+  }
 }
 
 /** Read a bounded UTF-8 body from the request stream. */
@@ -74,11 +82,10 @@ export function registerWebhookIngress(
   config: WebhookIngressConfig,
   handler: (payload: unknown) => void,
 ): (() => void) | null {
-  // Use ctx.get() instead of direct property access: webServer is an OPTIONAL
-  // dependency (absent in headless profiles). Direct access would require
-  // declaring it in `inject`, which would block plugin startup when missing.
-  const webServer = ctx.get('webServer') as WebServerLike | undefined
-  if (!webServer) {
+  // webServer is a declared hard dependency (plugin inject), so direct access
+  // is guarded-allowed. The null check stays as a cheap defense.
+  const webServer = ctx.webServer as WebServerLike | undefined
+  if (!webServer || typeof webServer.register !== 'function') {
     ctx.logger.warn('[reactor] webServer service unavailable — webhook ingress disabled')
     return null
   }
