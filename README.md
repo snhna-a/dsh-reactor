@@ -36,7 +36,91 @@ Agent 会自动调用 `reactor_define` 工具创建规则，之后无需人工�
 
 - "监控我的 deploy.json 文件，当 version 字段变化时，给我发一个 webhook 通知"
 - "每 5 分钟运行一次 `git log --oneline -1`，当输出变化时，在新会话中提醒我查看提交"
-- "轮询 GitHub API 获取最新 release，当 tag_name 不等于 v1.0.0 时，执行部署脚本"
+- "轮询 GitHub API 获取最新 release，当 tag_name 变化时，把新版本拉下来构建运行"（完整示例见下节）
+
+---
+
+## 示例：监控 GitHub 新版本发布
+
+目标：某仓库发布新 Release 时，把新版本代码拉下来构建运行。dsh-reactor 的事件驱动模型正是为此设计——**条件触发**（版本变化）而非定时执行。
+
+**对话方式**（对 Agent 说）：
+
+> "创建一个规则：每 5 分钟轮询 https://api.github.com/repos/vercel/next.js/releases/latest，当 tag_name 字段变化时，执行 `git -C C:\work\next fetch origin tag {{payload.tag_name}} && git -C C:\work\next checkout {{payload.tag_name}}`"
+
+**静态配置方式**（`cordis.patch.yml`）：
+
+```yaml
+- id: dsh-reactor
+  config:
+    rules:
+      - id: gh-release-deploy
+        name: GitHub Release Deploy
+        source:
+          kind: http-poll
+          target: https://api.github.com/repos/vercel/next.js/releases/latest
+          intervalMs: 300000        # 5 分钟
+        conditions:
+          - field: $.tag_name
+            op: changed             # 与上次载荷相比发生变化
+        actions:
+          - kind: shell
+            target: >-
+              git -C C:\work\next fetch origin tag {{payload.tag_name}} &&
+              git -C C:\work\next checkout {{payload.tag_name}} &&
+              cd C:\work\next && pnpm install && pnpm build
+        cooldownMs: 3600000         # 1 小时冷却，防止抖动
+        enabled: true
+```
+
+**要点**：
+- **首次触发（基线）**：`changed` 在第一次轮询时 prev 为空，会立即触发一次（相当于初始化部署到当前最新版），之后只在 tag 变化时触发。
+- **模板插值**：`{{payload.tag_name}}` 与 `{{tag_name}}` 写法等价，自动从事件载荷取值。
+- **GitHub API 限流**：未认证 60 次/小时，5 分钟轮询（12 次/小时）绰绰有余；私有仓库需配置带 token 的请求。
+- 建议先让 Agent 调 `reactor_test` 用真实/模拟载荷验证，再启用。
+
+---
+
+## 真实效果演示
+
+仓库内置端到端示例：`examples/github-release-watcher.mjs`（真实请求 GitHub，监控 `vercel/next.js` 最新 Release）。以下为 2026-09-09 实测输出：
+
+```text
+▶ 定义规则：监控 GitHub Release，新版本发布即执行
+[INFO] [reactor] rule added: GitHub Release Watcher (gh-release-demo)
+
+▶ 真实请求 GitHub: GET https://api.github.com/repos/vercel/next.js/releases/latest
+  数据来源: github.com releases/latest redirect
+  (API error: exit code 35 — 本次环境 api.github.com SSL 握手失败，自动降级 HTML 端点)
+  latest tag: v16.3.4, published: 2026-09-09T06:32:06.603Z
+
+▶ 第一次评估（基线，prev 为空 → changed 为 true → 触发）
+"new release detected: v16.3.4 (2026-09-09T06:32:06.603Z)"
+  条件匹配: true，动作执行: 1
+
+▶ 第二次评估（同一 tag，prev 相同 → changed 为 false → 不触发）
+  条件匹配: false，动作执行: 0
+
+▶ 模拟新版本发布（tag_name 变化 → 再次触发）
+"new release detected: v16.3.4-demo-new (2026-09-09T06:32:06.625Z)"
+  条件匹配: true，动作执行: 1
+
+▶ 执行历史（reactor_history 的数据来源）
+  2026-09-09T06:32:06.624Z matched=true  [OK] shell: echo "new release detected: {{payload.tag_name}} ({{payload.published_at}})" (21ms)
+  2026-09-09T06:32:06.625Z matched=false
+  2026-09-09T06:32:06.642Z matched=true  [OK] shell: echo "new release detected: {{payload.tag_name}} ({{payload.published_at}})" (17ms)
+
+演示完成 ✅
+```
+
+这段输出展示了 dsh-reactor 的四个核心特性：
+
+1. **条件驱动**：tag 变化才触发；同一版本再次轮询**不触发**（`changed` 状态感知，这是与传统 cron 的本质区别）
+2. **真实数据**：从 GitHub 获取最新版本号；API 不可用（限流/连接失败）时自动降级 HTML 端点，不中断
+3. **模板插值**：`{{payload.tag_name}}` 从事件载荷取值注入动作，实现"发布即部署"
+4. **可审计**：每次触发（匹配/不匹配）连同动作成败与耗时进入执行历史，供 `reactor_history` 查询
+
+运行方式：`node examples/github-release-watcher.mjs`
 
 ---
 
@@ -224,6 +308,16 @@ curl -X POST http://127.0.0.1:3080/reactor/webhook \
 - **webhook 入口**（v0.2）默认无鉴权，仅在本地回环监听；如需对外暴露请配置 `webhookToken` 并在反向代理层加 TLS。
 - 规则与历史存储在 `$DSH_HOME/reactor/` 下，均为本地文件，本插件不上传任何数据到第三方服务。
 
+### 兼容性
+
+| 项 | 说明 |
+|----|------|
+| DeepSeek Harness | ≥ 0.1.2-rc.1（`dsh` CLI，`@deepseek-ai/cordis` ^4.0.0） |
+| Node.js | 运行时 ≥ 22；构建 ≥ 22.19 |
+| profile | `web` 等带 webServer 的 profile：完整能力（含 webhook 入口）；headless profile：自动降级（无 webhook 入口，其余功能正常） |
+| 平台 | Windows / Linux / macOS；`shell` 动作依赖系统默认 shell（cmd / bash / zsh） |
+| 外部服务 | 事件源 URL（http-poll）、webhook 目标（动作）、GitHub API 等由你的规则决定；本插件不内建任何第三方连接 |
+
 ---
 
 ## 开发
@@ -237,6 +331,13 @@ pnpm typecheck
 
 # 构建
 pnpm build
+
+# 冒烟测试 + 启动验证
+node test/smoke.mjs
+node test/boot-check.mjs
+
+# 端到端演示（真实请求 GitHub）
+node examples/github-release-watcher.mjs
 
 # 本地安装到调试 profile
 dsh plugin --profile dev add .
