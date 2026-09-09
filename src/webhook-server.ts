@@ -74,7 +74,10 @@ export function registerWebhookIngress(
   config: WebhookIngressConfig,
   handler: (payload: unknown) => void,
 ): (() => void) | null {
-  const webServer = (ctx as unknown as { webServer?: WebServerLike }).webServer
+  // Use ctx.get() instead of direct property access: webServer is an OPTIONAL
+  // dependency (absent in headless profiles). Direct access would require
+  // declaring it in `inject`, which would block plugin startup when missing.
+  const webServer = ctx.get('webServer') as WebServerLike | undefined
   if (!webServer) {
     ctx.logger.warn('[reactor] webServer service unavailable — webhook ingress disabled')
     return null
