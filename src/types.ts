@@ -72,6 +72,19 @@ export interface ReactorRule {
 
 // ─── Execution History ──────────────────────────────────────────
 
+/** One attempt of an action (present when an action retried or failed). */
+export interface ActionAttempt {
+  /** 0-based attempt index. */
+  at: number
+  ok: boolean
+  /** Error message when this attempt failed. */
+  error?: string
+  /** Duration of this attempt in milliseconds. */
+  ms: number
+  /** Agent session result, only on the final attempt of an agent-talk action. */
+  sessionResult?: SessionRunResult
+}
+
 /** Outcome of one action within a rule trigger. */
 export interface ActionRunRecord {
   kind: ActionKind
@@ -81,6 +94,10 @@ export interface ActionRunRecord {
   error?: string
   /** Action duration in milliseconds. */
   ms: number
+  /** Total attempts taken (1 = first try, >1 = retried). (v0.3) */
+  attempts?: number
+  /** Per-attempt details, present when the action retried or failed. (v0.3) */
+  attemptLog?: ActionAttempt[]
 }
 
 /** One recorded rule trigger. */
@@ -104,6 +121,8 @@ export interface SessionRunResult {
   ok: boolean
   error?: string
   ms: number
+  /** Token usage when the host session exposes it. (v0.3) */
+  tokens?: { input?: number; output?: number }
 }
 
 // ─── Persistence ────────────────────────────────────────────────
@@ -146,4 +165,51 @@ export interface ReactorConfig {
   agentPreset?: string
   /** Permission preset for created sessions. Default 'workspace-write'. */
   permissionPreset?: string
+  /** Max retries for a failed action before it is recorded as failed. Default 3. (v0.3) */
+  maxRetries?: number
+  /** Base delay between retries (exponential backoff: 2^n * retryDelayMs). Default 1000. (v0.3) */
+  retryDelayMs?: number
+  /** REST API path prefix exposed to the widget. Default /reactor/api. (v0.3) */
+  apiPath?: string
+  /** Whether the widget UI + REST API are enabled. Default true. (v0.3) */
+  uiEnabled?: boolean
+}
+
+// ─── Widget / API (v0.3) ────────────────────────────────────────
+
+export type ReactorEventType =
+  | 'rule-added'
+  | 'rule-updated'
+  | 'rule-removed'
+  | 'rule-triggered'
+  | 'rule-error'
+  | 'action-failed'
+
+/** One entry in the engine's event stream (drives widget notifications). */
+export interface ReactorEvent {
+  /** Monotonic sequence number for incremental polling. */
+  seq: number
+  type: ReactorEventType
+  /** Unix epoch milliseconds. */
+  at: number
+  ruleId: string
+  ruleName?: string
+  /** Whether the rule conditions matched (rule-triggered only). */
+  matched?: boolean
+  /** Error message (rule-error / action-failed). */
+  error?: string
+  /** Trigger count after this event (rule-triggered only). */
+  triggerCount?: number
+  /** Extra safe detail (never the raw event payload). */
+  detail?: Record<string, unknown>
+}
+
+/** Aggregated usage numbers for the widget overview tab. */
+export interface ReactorStats {
+  totalRules: number
+  enabledRules: number
+  totalTriggers: number
+  totalActions: number
+  failedActions: number
+  lastTriggerAt?: number
 }
