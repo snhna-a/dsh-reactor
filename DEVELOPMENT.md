@@ -2,7 +2,7 @@
 
 > 事件驱动智能决策引擎（ECA：Event-Condition-Action）—— DeepSeek Harness 插件
 >
-> 文档版本：v2（一期基线 + 二期升级）｜更新时间：2026-09-09
+> 文档版本：v3（一期基线 + 二期升级 + 三期挂件）｜更新时间：2026-09-09
 
 ---
 
@@ -16,6 +16,7 @@
 - [六、发布与收录](#六发布与收录)
 - [七、后续规划](#七后续规划)
 - [八、二期升级功能（v0.2.0）](#八二期升级功能v020)
+- [九、三期升级功能（v0.3.0）——可视化挂件](#九三期升级功能v030可视化挂件)
 
 ---
 
@@ -166,7 +167,7 @@ src/
 ### 3.4 依赖注入
 
 ```typescript
-export const inject = ['tools']   // 必需服务：工具注册表（webServer 为可选，经 ctx.get 读取）
+export const inject = ['tools', 'webServer']   // 必需服务：工具注册表 + HTTP 载体（v0.3）
 ```
 
 ---
@@ -186,10 +187,11 @@ export const inject = ['tools']   // 必需服务：工具注册表（webServer 
 ```bash
 pnpm install                 # 安装依赖（需官方 registry）
 pnpm typecheck               # 类型检查
-pnpm build                   # 构建到 lib/
+pnpm build                   # 构建到 lib/（含 client 产物）
 node test/smoke.mjs          # 核心引擎冒烟测试（37 项断言）
 node test/boot-check.mjs     # 真实 Cordis 启动验证（无/有 webServer 两场景）
 node examples/github-release-watcher.mjs   # 端到端演示（真实请求 GitHub）
+node scripts/api-smoke.mjs   # v0.3 REST API 全链路冒烟（8 步）
 ```
 
 ### 4.3 依赖声明（package.json）
@@ -197,7 +199,9 @@ node examples/github-release-watcher.mjs   # 端到端演示（真实请求 GitH
 ```json
 {
   "dependencies": {
-    "execa": "^9.5.2"
+    "execa": "^9.5.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.0",
@@ -213,6 +217,10 @@ node examples/github-release-watcher.mjs   # 端到端演示（真实请求 GitH
 "dsh": {
   "bundle": {
     "patch": "./cordis.patch.yml"
+  },
+  "client": {
+    "inject": ["@deepseek-ai/dsh-client-runtime"],
+    "platform": "web"
   }
 }
 ```
@@ -244,6 +252,7 @@ dsh plugin --profile web add .
 | 工具可见 | 对话中问 Agent"有哪些 reactor 工具" | 列出 6 个工具（v0.2 含 reactor_history） |
 | 规则创建 | 对话让 Agent 调 reactor_define | 返回规则 ID |
 | 规则测试 | 对话让 Agent 调 reactor_test | 返回匹配结果 |
+| 挂件可见 | 打开 http://127.0.0.1:3080/ 刷新（Ctrl+F5） | 右下角出现 mascot，点击展开面板（v0.3） |
 | 卸载清理 | `dsh plugin --profile web remove dsh-reactor` + 重启 | 插件完全移除 |
 
 ### 5.4 冒烟测试覆盖
@@ -253,12 +262,12 @@ dsh plugin --profile web add .
 | jsonPath | 嵌套取值 / 数组索引 / 缺失路径 |
 | 条件评估 | 10 种操作符正反例 |
 | AND/OR | 组合逻辑 |
-| 插值（v0.2） | {{field}} / {{payload.field}} / 嵌套 / 缺失 |
 | 引擎生命周期 | addRule / getRule / removeRule / dispose |
 | 错误隔离 | 动作失败不崩溃 |
 | 持久化（v0.2） | 规则重启恢复 / 运行时状态剥离 / 历史跨重启 |
 | webhook 分派（v0.2） | 路径过滤 / 条件评估 / 触发计数 |
 | 启动验证（v0.2） | boot-check：无 webServer 降级 + 有 webServer 挂载路由 |
+| REST API（v0.3） | api-smoke：webhook 202 / 创建 201 / 列表 / 历史 / stats / events / 删除 / 清理 8 步 |
 
 ---
 
@@ -276,16 +285,16 @@ npm publish --access public
 - [x] GitHub 仓库设为 Public（https://github.com/snhna-a/dsh-reactor）
 - [ ] 仓库 Topics 添加 `dsh-plugin`（需在仓库 Settings → Topics 手动添加）
 - [x] README 含安装命令 `dsh plugin --profile web add dsh-reactor`
-- [x] 插件导出 `apply(ctx)` 模块（✅ 已满足）
-- [x] package.json 声明 `dsh.bundle.patch`（✅ 已满足）
-- [x] 开源许可证 MIT（✅ 已满足）
-- [x] README 声明"社区插件，非官方出品"
+- [ ] 插件导出 `apply(ctx)` 模块（✅ 已满足）
+- [ ] package.json 声明 `dsh.bundle.patch`（✅ 已满足）
+- [ ] 开源许可证 MIT（✅ 已满足）
+- [ ] README 声明"社区插件，非官方出品"
 
 ---
 
 ## 七、后续规划
 
-> 状态更新（2026-09-09）：P0、P1 四项已在 v0.2.0 全部实现并验证，详见[第八章](#八二期升级功能v020)。
+> 状态更新（2026-09-09）：P0、P1 四项已在 v0.2.0 全部实现并验证；P2-2 可视化面板已在 v0.3.0 落地，详见[第九章](#九三期升级功能v030可视化挂件)。
 
 ### P0（高优先级）—— ✅ 已在 v0.2.0 完成
 
@@ -306,7 +315,7 @@ npm publish --access public
 | # | 事项 | 说明 |
 |---|------|------|
 | P2-1 | 通知渠道 | ServerChan / 钉钉 / 飞书 webhook 模板 |
-| P2-2 | Web UI 面板 | 参考 dsh-widgets 模式扩展可视化规则管理 |
+| P2-2 | Web UI 面板 | 参考 dsh-widgets 模式扩展可视化规则管理（✅ 已在 v0.3.0 落地为挂件） |
 | P2-3 | http-poll headers 暴露 | 支持私有 GitHub 仓库等带鉴权请求 |
 
 ---
@@ -372,9 +381,8 @@ npm publish --access public
 - 引擎侧新增 `dispatchWebhook(payload, path)`：遍历 `source.kind === 'webhook'` 的规则，按路径过滤（`source.target` 非 `/` 时须精确匹配）、评估条件、命中则执行动作并记录历史
 - webhook 事件源无轮询定时器（由推送驱动），`reactor_define` 的 `source_kind` 枚举已扩展 `webhook`
 - 路由注册是可逆 effect，插件卸载自动摘除
-- **webServer 为可选依赖**：经 `ctx.get('webServer')` 读取（无需声明 `inject`），headless 等无 webServer 的 profile 下自动降级禁用入口，不阻塞插件加载（已实测修复 `cannot get property "webServer" without inject`）
 
-**验证**：冒烟测试 —— 路径过滤（同路径触发、异路径跳过）、条件评估（命中/未命中）、引擎分派计数正确；boot-check —— 无 webServer 场景降级、有 webServer 场景挂载路由。
+**验证**：冒烟测试 —— 路径过滤（同路径触发、异路径跳过）、条件评估（命中/未命中）、引擎分派计数正确。
 
 ### 8.6 二期新增/变更文件清单
 
@@ -382,10 +390,10 @@ npm publish --access public
 |------|------|
 | `src/store.ts` | 新增：RuleStore（持久化）+ HistoryStore（历史） |
 | `src/agent-session.ts` | 新增：真实 Agent 会话执行 |
-| `src/webhook-server.ts` | 新增：HTTP 接收端点；`ctx.get('webServer')` 可选注入读取 |
+| `src/webhook-server.ts` | 新增：HTTP 接收端点 |
 | `src/types.ts` | 扩展：EventSourceKind + webhook；新增 TriggerRecord / ActionRunRecord / SessionRunResult / PersistedState / PersistedRule；Config 新增 9 项 |
-| `src/engine.ts` | 接入持久化、历史、webhook 分派、真实会话；closed 标志防 dispose 后空转；dispose 顺序修正；testRule 更新 prevPayloads（changed 状态感知在测试路径一致） |
-| `src/actions/shell.ts` | 改造：真实会话优先，事件广播降级；插值兼容 {{payload.field}} / {{field}} |
+| `src/engine.ts` | 接入持久化、历史、webhook 分派、真实会话；closed 标志防 dispose 后空转；dispose 顺序修正 |
+| `src/actions/agent-talk.ts` | 改造：真实会话优先，事件广播降级 |
 | `src/tools.ts` | reactor_define 支持 webhook；新增 reactor_history |
 | `src/index.ts` | 加载持久化、注册 webhook 入口、新 Config 项 |
 | `test/smoke.mjs` | 新增 persistence / webhook / interpolate 测试（37 项全过） |
@@ -413,3 +421,115 @@ npm publish --access public
 - agent-talk 会话执行结果（Agent 最终回复）暂无回传机制（fire-and-forget 设计）；如需完整闭环，后续可监听 `session/finish` 事件补充 `SessionRunResult`
 - webhook 端点仅在 dsh 进程存活期间接收事件（无消息队列），崩溃窗口内的事件会丢失——如需强投递可前置消息队列/重放
 - 真实会话执行需在带 web 栈的 profile（web）下验证；headless 环境会降级为事件广播
+
+---
+
+## 九、三期升级功能（v0.3.0）——可视化挂件
+
+> 本节为三期实现完成后的增量能力记录。核心目标：把"规则定义与监控"从**对话框自然语言**升级为**可视化挂件**——右下角常驻卡通形象、触发即气泡提醒、点击展开管理面板，规则增删改、触发历史、动作日志、Token 消耗、失败重试与报错分析全部可视化。
+
+### 9.1 升级总览
+
+| 三期目标 | 实现方式 | 模块 | 状态 |
+|----------|----------|------|------|
+| 挂件入口 | `dsh.client` manifest + client `ctx.effect` + `createRoot` 直挂 `document.body`（对齐 dsh-cron-panel 验证路径） | `src/client/*` + `scripts/build-client.mjs` | ✅ 已实现并目验 |
+| 规则/状态/历史可视化 | 服务端 REST API（7 路由）供挂件读取与操作 | `src/api-server.ts` | ✅ 已实现并实测 |
+| 气泡提醒 | client 轮询 events API（seq 增量）→ toast + 未读角标 | `src/client/Widget.tsx` | ✅ 已实现 |
+| 形象自定义 | 大小 0.6–2.5x 缩放、拖拽吸附、自定义形象 URL（localStorage 持久化） | `src/client/Widget.tsx` | ✅ 已实现 |
+| webServer 注入修复 | `inject: ['tools', 'webServer']` + prefix 单路由（对齐 dsh-cron-panel） | `src/index.ts` / `api-server.ts` / `webhook-server.ts` | ✅ 已修复并验证 |
+
+**版本**：0.2.0 → 0.3.0
+
+### 9.2 WebServer 接入与两个关键修复
+
+v0.3 是首个需要 `webServer` 服务的版本。实现过程中定位并修复了两个启动/路由级问题，与社区插件 dsh-cron-panel 的接入模式对齐后全部解决：
+
+**修复 1：`ctx.get('webServer')` 返回 undefined**
+- 现象：插件 `apply` 时 `ctx.get('webServer')` 为 `undefined`，API/webhook 路由全部注册失败（API 404、webhook 405）
+- 根因：cordis 4 中**未在 `inject` 声明依赖的服务对插件不可见**（`ctx.get` 同样受门禁约束）
+- 修复：`export const inject = ['tools', 'webServer']`，代码中直接 `ctx.webServer`（cordis 通过声明合并类型注入）
+
+**修复 2：同路径 GET/POST 注册 duplicate exact 路由**
+- 现象：`Error: webserver: duplicate exact route "/reactor/api/rules"`，dsh web 启动崩溃
+- 根因：webServer 的 exact 路由表**按 path 唯一**（不区分 method），api-server 曾对 `rules` 分别注册 GET 与 POST 两个 exact 路由
+- 修复：改为**单个 `kind: 'prefix'` 路由**（path `/reactor/api`）+ handler 内按 `method + path` 分发——与 dsh-cron-panel 验证过的模式一致
+
+### 9.3 REST API（挂件数据通道）
+
+单条 prefix 路由 `/reactor/api`，内部按 `{ method, path }` 分发：
+
+| 方法 + 路径 | 用途 |
+|------------|------|
+| `GET /stats` | 总览统计：规则数、启用数、总触发次数、动作成败、最后触发时间 |
+| `GET /rules` | 列出全部规则（含触发计数、最后载荷） |
+| `POST /rules` | 创建规则（与 `reactor_define` 同一契约，自然语言/表单两入口） |
+| `PATCH /rules` | 更新规则（启停、修改条件/动作） |
+| `DELETE /rules?ruleId=` | 删除规则 |
+| `GET /history` | 执行历史（含每动作成败/耗时/重试/Token 消耗/失败信息） |
+| `GET /events?since=` | 事件流（seq 单调递增，挂件增量轮询驱动气泡提醒） |
+
+- 认证：本机回环默认放行；配置 `webhookToken` 后要求 `x-reactor-token` 请求头（与 webhook 入口一致）
+- 安全：`DELETE`/`PATCH` 等写操作与读操作同权，默认仅监听 `127.0.0.1`
+
+### 9.4 客户端加载链
+
+**声明**（package.json）：
+
+```json
+"exports": { "./client": { "default": "./lib/client.js" } },
+"dsh": {
+  "bundle": { "patch": "./cordis.patch.yml" },
+  "client": {
+    "inject": ["@deepseek-ai/dsh-client-runtime"],
+    "platform": "web"
+  }
+}
+```
+
+**加载机制**（已对照 dsh-cron-panel@0.1.11 产物与 `@deepseek-ai/dsh-client-modules` 源码实证）：
+1. dsh-client-modules 扫描 host Loader 中声明 `dsh.client` 的包（增量、按 fiber 事件驱动），组合成 `window.__DSH_BOOT__` 模块图
+2. 组合产物经 `/plugins/??<id>/client.js&rev=<hash>` combo 路由下发；**组合失败（如缺产物）会抛 `ClientPackageCompositionError` 导致启动失败**——启动无此错误即证明 client 已被识别
+3. 产物格式必须为 `window.__ModuleLoader__.load({ id, factory: (require) => {...} })`（esbuild bundle + IIFE 包装，见 `scripts/build-client.mjs`）；`react` / `react-dom/client` 经 factory `require` 从宿主模块表解析（esbuild external）
+4. UI 注册：client 入口 `apply(ctx)` 内 `ctx.effect(() => { host = createElement('div'); createRoot(host).render(<ReactorWidget/>); document.body.appendChild(host) })`——挂件根节点 `.rxw-root` 用 `position: fixed` 定位，**不依赖 slots/shell.overlay**，与 dsh-cron-panel client 的挂载方式一致（已实证：slots 链在 client 端存在"未声明 inject 不可见"同类门禁风险，DOM 直挂规避整条链路）
+
+**挂件功能清单**：
+- 右下角 mascot 气泡（默认形象为浅蓝小反应堆机器人，可用 localStorage `dsh-reactor:avatar` 覆盖为任意图片 URL）
+- 拖拽吸附（四角/四边）、大小 0.6–2.5x 缩放（localStorage `dsh-reactor:scale` / `dsh-reactor:pos`）
+- 未读角标 + toast 气泡提醒（规则触发、动作失败、重试耗尽等事件）
+- 展开面板：总览（统计卡 + 最近事件流）｜规则列表（启停开关、删除、点击进详情）｜新建规则表单（含 GitHub Release 监控等快捷预设）｜规则详情（执行历史、每动作成功/失败、重试次数、attemptLog、Agent 会话 Token 消耗、失败信息）
+
+### 9.5 三期新增/变更文件清单
+
+| 文件 | 变更 |
+|------|------|
+| `src/client/Widget.tsx` | 新增：挂件全部 UI（约 33KB） |
+| `src/client/api.ts` | 新增：REST 客户端（ReactorApi，覆盖 7 路由） |
+| `src/client/index.ts` | 新增：client 入口（`ctx.effect` + `createRoot` 直挂 body） |
+| `scripts/build-client.mjs` | 新增：esbuild + ModuleLoader 包装构建脚本 |
+| `lib/client.js` + `.map` | 构建产物（约 42KB / 62KB） |
+| `src/api-server.ts` | 新增：REST API（prefix 单路由 + 内部分发） |
+| `src/webhook-server.ts` | 重构：`ctx.webServer` 直取 + 支持 `prefix` 类型 |
+| `src/index.ts` | `inject` 增加 `webServer`；注册 API 服务；Config 新增 `apiPath` / `uiEnabled` |
+| `src/types.ts` | 扩展：ReactorEvent / ReactorStats / ActionAttempt.sessionResult |
+| `package.json` | 版本 0.3.0；`dsh.client` + `./client` exports；client 构建依赖 |
+| `scripts/api-smoke.mjs` | 新增：REST API 全链路冒烟（8 步） |
+
+### 9.6 三期验证记录
+
+| 验证项 | 结果 |
+|--------|------|
+| `tsc` 类型检查（含 client tsconfig） | ✅ 0 错误 |
+| `pnpm build`（host + client 双产物） | ✅ lib/index.js + lib/client.js（42KB） |
+| dsh web 重启（真实 profile，link 到新目录） | ✅ 启动无崩溃，插件正常加载 |
+| REST API 全链路冒烟（`scripts/api-smoke.mjs`） | ✅ 8/8：webhook 202、创建 201、列表、历史、stats、events 增量、删除 200、清理确认 |
+| 引擎真实运行 | ✅ 轮询规则持续触发，stats 计数增长（totalTriggers/totalActions） |
+| client 组合加载 | ✅ 启动无 `ClientPackageCompositionError`（client 已被 dsh-client-modules 识别组合） |
+| webhook 端点 | ✅ POST 返回 202（与 REST 同服务器，认证放行） |
+| 浏览器渲染 | ✅ 已目验：headless Edge 加载 dsh web，`--dump-dom` 确认 `.rxw-root`（fixed 右下角）+ mascot `<img>` + 全量 rxw-* 面板节点渲染；整页截图右下角可见浅蓝 mascot |
+
+### 9.7 三期遗留与后续建议
+
+- 挂件浏览器渲染已目验通过：打开 http://127.0.0.1:3080/ 刷新页面（Ctrl+F5 强刷，规避旧 client 缓存），右下角应出现 mascot；点击展开管理面板
+- Token 消耗统计：当前依赖 agent 会话返回的用量数据（`ActionAttempt.sessionResult`）；若宿主未回传用量，显示为 `-`
+- GitHub Release 快捷预设：一键创建"监控 release 变化 → 拉取代码运行"规则（`examples/github-release-watcher.mjs` 已验证核心逻辑）
+- 后续可选：挂件设置面板（配置项持久化）、历史分页、导出
