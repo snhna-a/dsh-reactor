@@ -28,7 +28,7 @@
 - dsh-reactor 是条件/状态驱动（`changed` 状态变化、多条件 AND/OR、JSONPath 取值判断）
 - dsh-automation 官方 README 明确声明"应响应文件/HTTP/进程条件的任务不适合它"——这正是 dsh-reactor 的定位缝隙
 
-**仓库地址**：https://github.com/snhna-a/dsh-reactor
+**仓库地址**：https://github.com/snhna-a/dsh-reactor（Public，已推送，topic `dsh-plugin` 待手动添加）
 **包名**：`dsh-reactor`（npm 未占用，已核验）
 
 ---
@@ -166,7 +166,7 @@ src/
 ### 3.4 依赖注入
 
 ```typescript
-export const inject = ['tools']   // 必需服务：工具注册表
+export const inject = ['tools']   // 必需服务：工具注册表（webServer 为可选，经 ctx.get 读取）
 ```
 
 ---
@@ -188,6 +188,7 @@ pnpm install                 # 安装依赖（需官方 registry）
 pnpm typecheck               # 类型检查
 pnpm build                   # 构建到 lib/
 node test/smoke.mjs          # 核心引擎冒烟测试（33 项断言）
+node test/boot-check.mjs     # 真实 Cordis 启动验证（无/有 webServer 两场景）
 ```
 
 ### 4.3 依赖声明（package.json）
@@ -255,6 +256,7 @@ dsh plugin --profile web add .
 | 错误隔离 | 动作失败不崩溃 |
 | 持久化（v0.2） | 规则重启恢复 / 运行时状态剥离 / 历史跨重启 |
 | webhook 分派（v0.2） | 路径过滤 / 条件评估 / 触发计数 |
+| 启动验证（v0.2） | boot-check：无 webServer 降级 + 有 webServer 挂载路由 |
 
 ---
 
@@ -269,7 +271,7 @@ npm publish --access public
 
 ### 6.2 收录要求（dsh-plugin.org）
 
-- [x] GitHub 仓库设为 Public
+- [x] GitHub 仓库设为 Public（https://github.com/snhna-a/dsh-reactor）
 - [ ] 仓库 Topics 添加 `dsh-plugin`（需在仓库 Settings → Topics 手动添加）
 - [x] README 含安装命令 `dsh plugin --profile web add dsh-reactor`
 - [x] 插件导出 `apply(ctx)` 模块（✅ 已满足）
@@ -368,8 +370,9 @@ npm publish --access public
 - 引擎侧新增 `dispatchWebhook(payload, path)`：遍历 `source.kind === 'webhook'` 的规则，按路径过滤（`source.target` 非 `/` 时须精确匹配）、评估条件、命中则执行动作并记录历史
 - webhook 事件源无轮询定时器（由推送驱动），`reactor_define` 的 `source_kind` 枚举已扩展 `webhook`
 - 路由注册是可逆 effect，插件卸载自动摘除
+- **webServer 为可选依赖**：经 `ctx.get('webServer')` 读取（无需声明 `inject`），headless 等无 webServer 的 profile 下自动降级禁用入口，不阻塞插件加载（已实测修复 `cannot get property "webServer" without inject`）
 
-**验证**：冒烟测试 —— 路径过滤（同路径触发、异路径跳过）、条件评估（命中/未命中）、引擎分派计数正确。
+**验证**：冒烟测试 —— 路径过滤（同路径触发、异路径跳过）、条件评估（命中/未命中）、引擎分派计数正确；boot-check —— 无 webServer 场景降级、有 webServer 场景挂载路由。
 
 ### 8.6 二期新增/变更文件清单
 
@@ -377,13 +380,14 @@ npm publish --access public
 |------|------|
 | `src/store.ts` | 新增：RuleStore（持久化）+ HistoryStore（历史） |
 | `src/agent-session.ts` | 新增：真实 Agent 会话执行 |
-| `src/webhook-server.ts` | 新增：HTTP 接收端点 |
+| `src/webhook-server.ts` | 新增：HTTP 接收端点；`ctx.get('webServer')` 可选注入读取 |
 | `src/types.ts` | 扩展：EventSourceKind + webhook；新增 TriggerRecord / ActionRunRecord / SessionRunResult / PersistedState / PersistedRule；Config 新增 9 项 |
 | `src/engine.ts` | 接入持久化、历史、webhook 分派、真实会话；closed 标志防 dispose 后空转；dispose 顺序修正 |
 | `src/actions/agent-talk.ts` | 改造：真实会话优先，事件广播降级 |
 | `src/tools.ts` | reactor_define 支持 webhook；新增 reactor_history |
 | `src/index.ts` | 加载持久化、注册 webhook 入口、新 Config 项 |
 | `test/smoke.mjs` | 新增 persistence / webhook 两组测试（33 项全过） |
+| `test/boot-check.mjs` | 新增：真实 Cordis 启动验证（无/有 webServer 两场景） |
 | `README.md` | 新功能文档化 |
 | `package.json` | 版本 0.2.0 |
 
@@ -395,6 +399,8 @@ npm publish --access public
 | 冒烟测试（33 项：jsonPath/条件/AND-OR/引擎生命周期/持久化/历史/webhook 分派） | ✅ 33/33 通过 |
 | Windows rename 并发竞态 | ✅ 串行写队列修复 |
 | dispose 持久化顺序 | ✅ 先存后清 |
+| 真实 Cordis 启动验证（`test/boot-check.mjs`：无 webServer / 有 webServer 两场景） | ✅ 2/2 通过 |
+| webServer 可选注入修复 | ✅ `ctx.get('webServer')` 替代直接属性访问，消除 `cannot get property "webServer" without inject` 启动崩溃 |
 
 ### 8.8 二期遗留与后续建议
 
