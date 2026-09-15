@@ -1,0 +1,84 @@
+{
+  "name": "dsh-reactor",
+  "version": "1.0.0",
+  "description": "Event-Driven Autonomous Agent Runtime for DeepSeek Harness. Watch any event source (HTTP/file/command/webhook), match conditions, and spawn an isolated ReAct Agent Session that autonomously achieves your goal — with budget gates, retry, deterministic verification, failure classification, run trace, and a floating widget UI.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    }
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "docs"
+  ],
+  "scripts": {
+    "build": "tsc && tsc -p tsconfig.client.json --noEmit && node scripts/build-client.mjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "execa": "^9.5.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0",
+    "@deepseek-ai/dsh-tools": "^0.1.2-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0",
+    "@deepseek-ai/dsh-client-runtime": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-invariants": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.2-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.0",
+    "@types/node": "^26.5.0",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.7.0"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "automation",
+    "event-driven",
+    "ecg",
+    "eca",
+    "rule-engine",
+    "agent",
+    "react",
+    "autonomous",
+    "scheduler",
+    "watchdog",
+    "widget",
+    "ui"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/snhna-a/dsh-reactor.git"
+  }
+}

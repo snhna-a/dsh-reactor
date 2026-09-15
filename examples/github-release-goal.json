@@ -1,0 +1,32 @@
+{
+  "_comment": "dsh-reactor v0.5 goal-mode example: monitor GitHub releases, auto-update & test via ReAct Agent",
+  "name": "GitHub Release 自动更新与测试",
+  "description": "监控指定仓库的最新 Release，检测到新版本后，由 Agent 自主完成拉取代码、安装依赖、运行测试、分析结果并发送报告",
+  "mode": "goal",
+  "source": {
+    "kind": "http-poll",
+    "target": "https://api.github.com/repos/facebook/react/releases/latest",
+    "intervalMs": 300000,
+    "headers": {
+      "Accept": "application/vnd.github+json",
+      "User-Agent": "dsh-reactor"
+    }
+  },
+  "conditions": [
+    {
+      "field": "$.tag_name",
+      "op": "changed",
+      "_comment": "tag_name 发生变化时触发（即有新版本发布）"
+    }
+  ],
+  "goal": "检测到 React 仓库发布了新版本。请完成以下目标：\n1. 进入工作目录，执行 git pull 拉取最新代码\n2. 如果 package.json 有变化，运行 npm install 安装依赖\n3. 运行 npm test 执行测试套件\n4. 如果测试全部通过，发送一条成功 webhook 通知到 https://httpbin.org/post，包含版本号和测试结果\n5. 如果测试失败，分析错误日志，尝试修复常见问题（依赖缺失、版本冲突等），最多重试 3 次\n6. 无论成功或失败，最后生成一份执行报告，说明做了什么、结果如何、遇到的问题",
+  "constraints": {
+    "workingDir": "C:/projects/react",
+    "maxSteps": 25,
+    "timeoutMinutes": 30,
+    "allowedTools": ["shell", "file_read", "file_write", "webhook"]
+  },
+  "cooldownMs": 600000,
+  "enabled": true,
+  "_usage": "通过 reactor_define 工具创建此规则，或复制到 rules.json 中。将 workingDir 改为你的本地项目路径，source.target 改为你要监控的仓库。"
+}

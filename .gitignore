@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build artifacts (rebuilt via `pnpm build` before publish)
+lib/
+dist/
+*.tsbuildinfo
+
+# Temp / OS
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+
+# Local runtime state (never commit)
+reactor-data/
